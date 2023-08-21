@@ -1,16 +1,18 @@
 import os
-
 from django.shortcuts import render, get_object_or_404
 from django.http import Http404
 # Create your views here.
 from .models import Post, Comment
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.views.generic import ListView
-from .forms import EmailPostForm, CommentForm
+from .forms import EmailPostForm, CommentForm, SearchForm
 from django.http import HttpRequest
 from django.core.mail import send_mail
 from django.views.decorators.http import require_POST
 from django.db.models import Count
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+from taggit.models import Tag
+from django.contrib.postgres.search import TrigramSimilarity
 
 
 @require_POST
@@ -60,15 +62,6 @@ def post_share(request: HttpRequest, post_id):
                                                     'sent': sent})
 
 
-# from django.core.mail import send_mail
-# send_mail('Django mail',
-#         'This e-mail was sent with Django.',
-#         'maxkarbushev.com@gmail.com',
-#         ['maxkarbushev.com@gmail.com'],
-#         fail_silently=False,
-#           )
-# auth_password=os.getenv('HOST_PASSWORD')
-
 class PostListView(ListView):
     """
     Альтернативное представление списка постов
@@ -94,7 +87,7 @@ def post_detail(request: HttpRequest, year, month, day, post):
     # Список схожих постов
     post_tags_ids = post.tags.values_list('id', flat=True)
     similar_posts = Post.published.filter(tags__in=post_tags_ids) \
-                        .exclude(id=post.id)
+        .exclude(id=post.id)
     similar_posts = similar_posts.annotate(same_tags=Count('tags')) \
                         .order_by('-same_tags', '-publish')[:4]
     return render(request,
@@ -103,9 +96,6 @@ def post_detail(request: HttpRequest, year, month, day, post):
                    'comments': comments,
                    'form': form,
                    'similar_posts': similar_posts})
-
-
-from taggit.models import Tag
 
 
 def post_list(request: HttpRequest, tag_slug=None):
@@ -127,3 +117,71 @@ def post_list(request: HttpRequest, tag_slug=None):
                   'blog/post/list.html',
                   {'posts': posts,
                    'tag': tag})
+
+
+# def post_search(request):
+#     form = SearchForm()
+#     query = None
+#     results = []
+#
+#     if 'query' in request.GET:
+#         form = SearchForm(request.GET)
+#         if form.is_valid():
+#             query = form.cleaned_data['query']
+#             # придавать бóльшую релевантность постам, которые сочетаются по заголовку, а не по содержимому
+#             # weight='A' weight='B'
+#             search_vector = SearchVector('title', weight='A', config='russian') + \
+#                             SearchVector('body', weight='B', config='russian')
+#             search_query = SearchQuery(query, config='russian')
+#             results = Post.published.annotate(
+#                 search=search_vector,
+#                 rank=SearchRank(search_vector, search_query)
+#             ).filter(rank__gte=0.3).order_by('-rank')
+#
+#     return render(request,
+#                   'blog/post/search.html',
+#                   {'form': form,
+#                    'query': query,
+#                    'results': results})
+
+# Поиск по триграммному сходству
+def post_search(request):
+    form = SearchForm()
+    query = None
+    results = []
+
+    if 'query' in request.GET:
+        form = SearchForm(request.GET)
+        if form.is_valid():
+            query = form.cleaned_data['query']
+            results = Post.published.annotate(
+                similarity=TrigramSimilarity('title', query),
+            ).filter(similarity__gt=0.1).order_by('-similarity')
+
+    return render(request,
+                  'blog/post/search.html',
+                  {'form': form,
+                   'query': query,
+                   'results': results})
+
+
+# ****************************************************************
+"""
+from django.core.mail import send_mail
+send_mail('Django mail',
+        'This e-mail was sent with Django.',
+        'maxkarbushev.com@gmail.com',
+        ['maxkarbushev.com@gmail.com'],
+        fail_silently=False,
+          )
+
+поиск по одному полю
+    Post.objects.filter(title__search='Китай') 
+
+Поиск по нескольким полям
+    from django.contrib.postgres.search import SearchVector
+    from blog.models import Post
+    Post.objects.annotate(search=SearchVector('title', 'body'),
+        ).filter(search='django')
+
+"""
