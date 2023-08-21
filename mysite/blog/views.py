@@ -119,32 +119,6 @@ def post_list(request: HttpRequest, tag_slug=None):
                    'tag': tag})
 
 
-# def post_search(request):
-#     form = SearchForm()
-#     query = None
-#     results = []
-#
-#     if 'query' in request.GET:
-#         form = SearchForm(request.GET)
-#         if form.is_valid():
-#             query = form.cleaned_data['query']
-#             # придавать бóльшую релевантность постам, которые сочетаются по заголовку, а не по содержимому
-#             # weight='A' weight='B'
-#             search_vector = SearchVector('title', weight='A', config='russian') + \
-#                             SearchVector('body', weight='B', config='russian')
-#             search_query = SearchQuery(query, config='russian')
-#             results = Post.published.annotate(
-#                 search=search_vector,
-#                 rank=SearchRank(search_vector, search_query)
-#             ).filter(rank__gte=0.3).order_by('-rank')
-#
-#     return render(request,
-#                   'blog/post/search.html',
-#                   {'form': form,
-#                    'query': query,
-#                    'results': results})
-
-# Поиск по триграммному сходству
 def post_search(request):
     form = SearchForm()
     query = None
@@ -154,15 +128,41 @@ def post_search(request):
         form = SearchForm(request.GET)
         if form.is_valid():
             query = form.cleaned_data['query']
+            # придавать бóльшую релевантность постам, которые сочетаются по заголовку, а не по содержимому
+            # weight='A' weight='B'
+            search_vector = SearchVector('title', weight='A', config='russian') + \
+                            SearchVector('body', weight='B', config='russian')
+            search_query = SearchQuery(query, config='russian')
             results = Post.published.annotate(
-                similarity=TrigramSimilarity('title', query),
-            ).filter(similarity__gt=0.1).order_by('-similarity')
+                search=search_vector,
+                rank=SearchRank(search_vector, search_query)
+            ).filter(rank__gte=0.3).order_by('-rank')
 
     return render(request,
                   'blog/post/search.html',
                   {'form': form,
                    'query': query,
                    'results': results})
+
+# Поиск по триграммному сходству - НЕ РАБОТАЕТ
+# def post_search(request):
+#     form = SearchForm()
+#     query = None
+#     results = []
+#
+#     if 'query' in request.GET:
+#         form = SearchForm(request.GET)
+#         if form.is_valid():
+#             query = form.cleaned_data['query']
+#             results = Post.published.annotate(
+#                 similarity=TrigramSimilarity('title', query),
+#             ).filter(similarity__gt=0.1).order_by('-similarity')
+#
+#     return render(request,
+#                   'blog/post/search.html',
+#                   {'form': form,
+#                    'query': query,
+#                    'results': results})
 
 
 # ****************************************************************
